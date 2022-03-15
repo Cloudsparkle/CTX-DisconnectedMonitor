@@ -1,4 +1,30 @@
-﻿Add-PSSnapin Citrix*
+<#
+.SYNOPSIS
+  Monitor and log off disconnected sessions
+.DESCRIPTION
+  For specific published applications, monitor for disconnected sessions and when found log off
+.INPUTS
+  Ini file containing DDC and application list
+.OUTPUTS
+  None
+.NOTES
+  Version:        1.0
+  Author:         Bart Jacobs - @Cloudsparkle
+  Creation Date:  15/03/2022
+  Purpose/Change: Monitor disconnected sessions
+ .EXAMPLE
+  None
+#>
+
+# Try loading Citrix Powershell modules, exit when failed
+If ((Get-PSSnapin "Citrix*" -EA silentlycontinue) -eq $null)
+{
+  try {Add-PSSnapin Citrix* -ErrorAction Stop }
+  catch {Write-error "Error loading Citrix Powershell snapins"; Return }
+}
+
+# Get ready for the GUI stuff
+Add-Type -AssemblyName PresentationFramework
 
 Function Get-IniContent
 {
@@ -105,68 +131,55 @@ if ($currentDir -eq $PSHOME.TrimEnd('\'))
 
 $ConfigINI = $currentDir + "\config.ini"
 
-
 while ($true)
+{
+  $IniFileExists = Test-Path $ConfigINI
+  If ($IniFileExists -eq $true)
+  {
+    Write-Host "Reading config.ini..."
+    $IniFile = Get-IniContent $ConfigINI
+  }
+  Else
+  {
+    $msgBoxInput = [System.Windows.MessageBox]::Show("Error reading config.ini.","Error","OK","Error")
+    switch  ($msgBoxInput)
+    {
+      "OK"
+      {
+        Exit 1
+      }
+    }
+  }
 
-{
-$IniFileExists = Test-Path $ConfigINI
-If ($IniFileExists -eq $true)
-{
-  Write-Host "Reading config.ini..."
-  $IniFile = Get-IniContent $ConfigINI
-}
-Else
-{
-     # Quit with error
-}
-
-$DDCList = $IniFile.Keys
-foreach ($DDC in $DDCList)
-{
-    
+  $DDCList = $IniFile.Keys
+  foreach ($DDC in $DDCList)
+  {
     Write-Host "Getting all disconnected sessions from" $DDC"..."
-    $DisconnectedSessions = Get-BrokerSession -MaxRecordCount 5000 -AdminAddress $DDC -SessionState Disconnected
+    $DisconnectedSessions = Get-BrokerSession -MaxRecordCount 10000 -AdminAddress $DDC -SessionState Disconnected
     $CTXAppList = $IniFile[$DDC].Keys
-    
+
     foreach ($DisconnectedSession in $DisconnectedSessions)
     {
-        foreach ($CTXApp in $CTXAppList)
+      foreach ($CTXApp in $CTXAppList)
+      {
+        $CTXAppToLookFor = ($IniFile[$DDC][$CTXApp]).Trim()
+        $PublishedApps = $DisconnectedSession.ApplicationsInUse
+        foreach ($PublishedApp in $PublishedApps)
         {
-            $CTXAppToLookFor = ($IniFile[$DDC][$CTXApp]).Trim()
-            #Write-Host $DisconnectedSession.LaunchedViaPublishedName
-            #write-Host $IniFile[$DDC][$CTXApp]
-            $PublishedApps = $DisconnectedSession.ApplicationsInUse
-            #write-host $PublishedApps
-            foreach ($PublishedApp in $PublishedApps)
-            {
-                $PublishedAppSplit = $PublishedApp.Split("\")
-                $PublishedAppName = $PublishedAppSplit[-1]
-                
-                #Write-Host $PublishedAppName = $IniFile[$DDC][$CTXApp]
-                
-                #if ($DisconnectedSession.LaunchedViaPublishedName -eq $IniFile[$DDC][$CTXApp])
+          $PublishedAppSplit = $PublishedApp.Split("\")
+          $PublishedAppName = $PublishedAppSplit[-1]
 
-                if ($PublishedAppName -eq $CTXAppToLookFor)
-                {
-                    Write-Host $IniFile[$DDC][$CTXApp] "has a disconnected session for" ($DisconnectedSession.UserFullName).trim()". Logging off." -ForegroundColor Green
-                    Stop-BrokerSession $disconnectedsession
-
-                }
-            }
-
-
-
+          if ($PublishedAppName -eq $CTXAppToLookFor)
+          {
+            Write-Host $IniFile[$DDC][$CTXApp] "has a disconnected session for" ($DisconnectedSession.UserFullName).trim()". Logging off." -ForegroundColor Green
+            Stop-BrokerSession $disconnectedsession
+          }
         }
+      }
     }
+  }
 
-        
-
-
+  Write-host "Waiting for next run..." -ForegroundColor Yellow
+  [System.GC]::Collect()
+  Sleep 10
 }
-
-Write-host "Waiting for next run..." -ForegroundColor Yellow
-[System.GC]::Collect()
-Sleep 10
-
-}
-
