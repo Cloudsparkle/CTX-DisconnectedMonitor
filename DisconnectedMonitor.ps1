@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Monitor and log off disconnected sessions
+  Monitor and log off disconnected sessions of specific apps accross multiple sites
 .DESCRIPTION
   For specific published applications, monitor for disconnected sessions and when found log off
 .INPUTS
